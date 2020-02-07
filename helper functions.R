@@ -1,9 +1,7 @@
-assign.time.seg=function(dat){  #add tseg assignment to each obs
+assign.time.seg=function(dat,brkpts){  #add tseg assignment to each obs
   tmp=which(unique(dat$id) == brkpts$id)
-  breakpt<- brkpts[tmp,-1] %>% discard(is.na) %>% as.numeric(.[1,])
+  breakpt<- brkpts[tmp,-1] %>% purrr::discard(is.na) %>% as.numeric(.[1,])
   breakpt1=c(0,breakpt,Inf)
-  tmp1<- which(diff(breakpt1) < 1)  #check for impossible time units
-  breakpt1[tmp1+1]<- breakpt1[(tmp1+1)] + 1  #fix impossible time units
   n=length(breakpt1)
   res=matrix(NA,nrow(dat),1)
   for (i in 2:n){
@@ -12,28 +10,6 @@ assign.time.seg=function(dat){  #add tseg assignment to each obs
   }
   dat$tseg<- as.vector(res)
   dat
-}
-#------------------------------------------------
-create.grid=function(dat,crs,extent,res,buffer) {
-  grid<- raster(extent + buffer)
-  res(grid)<- res
-  proj4string(grid)<- crs
-  grid[]<- 0
-  
-  grid
-}
-#------------------------------------------------
-grid.summary.table=function(dat,crs,extent,res,buffer){  #dat must already have time.seg assigned
-  
-  #create grid and extract coords per cell
-  grid<- create.grid(dat=dat, crs=crs, extent=extent, res=res, buffer=buffer)
-  grid.cell.locs<- coordinates(grid) %>% data.frame()
-  names(grid.cell.locs)<- c("x", "y")
-  grid.cell.locs$grid.cell<- 1:length(grid)
-  grid.coord<- grid.cell.locs[grid.cell.locs$grid.cell %in% dat$grid.cell,]
-  
-  
-  grid.coord
 }
 #------------------------------------------------
 df.to.list=function(dat) {  #only for id as col in dat
@@ -92,23 +68,9 @@ plot.brks.indiv=function(data, brkpts, dat.res, var) {
   names(breakpt)<- "breaks"
   
   
-  plot(dat.list[[ind]][,var], type="l", ylab = var)
+  plot(dat.list[[ind]][,var], type="l", xlab = "Time", ylab = var, main = paste("ID",
+                                                                 unique(dat.list[[ind]][,"id"])))
   abline(v=brkpts[ind,], col="grey")
-  
-  # print(
-  #   ggplot(obs.long, aes(x=time, y=key, fill=value)) +
-  #     geom_tile() +
-  #     scale_fill_viridis_d("") +
-  #     scale_y_continuous(expand = c(0,0)) +
-  #     scale_x_continuous(expand = c(0,0)) +
-  #     geom_vline(data = breakpt, aes(xintercept = breaks), color = viridis(n=9)[7], size = 0.35) +
-  #     labs(x = "Observations", y = "Grid Cell") +
-  #     theme_bw() +
-  #     theme(axis.title = element_text(size = 18), axis.text = element_text(size = 16),
-  #           title = element_text(size = 20)) +
-  #     labs(title = paste("ID", unique(data$id)))
-  # )
-  
   
 }
 #------------------------------------------------
