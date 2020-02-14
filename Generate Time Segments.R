@@ -51,7 +51,7 @@ dat.res<- segment_time_continuous(data = dat.list, ngibbs = ngibbs, mu0 = mu0, t
 
 ## Traceplots
 #type is either 'nbrks' or 'LML' for y-axis label
-identity<- unique(dat$id)
+identity<- names(dat.list)
 
 traceplot(data = dat.res$nbrks, type = "nbrks", identity = identity)
 traceplot(data = dat.res$LML, type = "LML", identity = identity)
