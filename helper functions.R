@@ -81,3 +81,29 @@ plot.brks=function(data, brkpts, dat.res, var) {
     par(ask = FALSE)
   
 }
+#----------------------------------
+#Calc Net Squared Displacement
+get_NSD_internal = function(dat) {
+  
+  # identify starting locs
+  x0<- dat[1,"x"]
+  y0<- dat[1,"y"]
+  
+  # calculate net squared displacement
+  displ<- sqrt((dat[,"x"] - x0)^2 + (dat[,"y"] - y0)^2)
+  nsd<- displ^2
+  
+  # add NSD to data
+  dat$NSD<- nsd
+  
+  return(dat)
+}
+
+#----------------------------------
+get_NSD = function(dat.list) {
+  
+  # map function to calculate NSD 
+  tmp<- map(dat.list, get_NSD_internal)
+  
+  return(tmp)
+}
