@@ -3,7 +3,7 @@ title: "Exploration of Coarse-Scale Snail Kite Behavior"
 runtime: shiny
 output: 
   flexdashboard::flex_dashboard:
-    orientation: rows
+    orientation: columns
     vertical_layout: fill
     social: menu
     source_code: https://github.com/ValleLabUF/segment_continuous_var
@@ -38,7 +38,7 @@ library(dygraphs)
 # source('helper functions.R')
 
 dat<- read.csv("Snail Kite Gridded Data_TOHO_R2n.csv", header = T, sep = ",")
-brkpts<- read.csv("Snail Kite NSD Breakpoints.csv", header = T, sep = ",")
+# brkpts<- read.csv("Snail Kite NSD Breakpoints.csv", header = T, sep = ",")
 
 dat$id<- as.character(dat$id)
 dat$date<- as_datetime(dat$date)
@@ -48,12 +48,12 @@ dat$date<- as_datetime(dat$date)
 dat.filt<- reactive({
   
 d<- dat[dat$id == input$animal_id, ]
-dat.sf<- st_as_sf(d, coords = c("x","y"), crs = 32617) %>%
-  st_transform(4326)
+# dat.sf<- st_as_sf(d, coords = c("x","y"), crs = 32617) %>%
+#   st_transform(4326)
 # dat.sf<- dat.sf %>%
 #   st_cast("LINESTRING")
 
-return(dat.sf)
+return(d)
 })
 
 
@@ -81,7 +81,7 @@ Application author: [Josh Cullen](https://joshcullen.github.io/), [University of
 Explore track segments
 ======================================================================
 
-Row
+Column
 -----------------------------------------------------------------------
 
 ### Net Squared Displacement Time-Series
@@ -125,16 +125,16 @@ Row
 
 
 #make reactive brkpt data
-brkpts.filt<- reactive({
-  
-  b<- brkpts[brkpts$id == unique(dat.filt()$id), ] %>% 
-    purrr::discard(is.na)
-  b<- b[,-1]
-  b2<- dat.filt()$date[as.numeric(b)]
-  
-  return(b2)
-  
-})
+# brkpts.filt<- reactive({
+#   
+#   b<- brkpts[brkpts$id == unique(dat.filt()$id), ] %>% 
+#     purrr::discard(is.na)
+#   b<- b[,-1]
+#   b2<- dat.filt()$date[as.numeric(b)]
+#   
+#   return(b2)
+#   
+# })
 
 output$lineplot<- renderDygraph({
   
@@ -152,8 +152,8 @@ dygraph(series()) %>%
     dyShading(from = "2018-03-01", to = "2018-06-30") %>%
     dyShading(from = "2019-03-01", to = "2019-06-30") %>% 
     dyUnzoom() %>% 
-    dyCrosshair(direction = "vertical") %>% 
-    dyEvent(brkpts.filt(), color = "darkturquoise", strokePattern = "solid")
+    dyCrosshair(direction = "vertical") #%>% 
+    # dyEvent(brkpts.filt(), color = "darkturquoise", strokePattern = "solid")
     
 })
 
@@ -177,10 +177,10 @@ dygraphOutput("lineplot")
 ```
 
 
-Row
+Column
 -----------------------------------------------------------------------
 
-### Map of track segments
+### Map of Track Segments
 
 ```{r}
 
@@ -200,15 +200,25 @@ Row
 # Draw the map without selected tracts
 output$map <- renderLeaflet({
 
+    bounds<- reactive({
+      dat.sf<- st_as_sf(dat.filt(), coords = c("x","y"), crs = 32617) %>%
+        st_transform(4326)
+      extent<- as.numeric(st_bbox(dat.sf))
+      
+      return(extent)
+    })
+  
+    
     leaflet(options = leafletOptions(preferCanvas = TRUE)) %>%
     addProviderTiles(providers$Esri.OceanBasemap, group = "Ocean Basemap",
                         options = tileOptions(continuous_world = F)) %>%
-    addPolylines(data = dat.filt(),
-                 lng = unlist(map(dat.filt()$geometry,1)),
-                 lat = unlist(map(dat.filt()$geometry,2)),
-                 weight = 2,
-                 layerId = ~unique(id),
-                 color = "grey") %>%
+    fitBounds(bounds()[1], bounds()[2], bounds()[3], bounds()[4]) %>% 
+    # addPolylines(data = dat.filt(),
+    #              lng = unlist(map(dat.filt()$geometry,1)),
+    #              lat = unlist(map(dat.filt()$geometry,2)),
+    #              weight = 2,
+    #              layerId = ~unique(id),
+    #              color = "grey") %>%
     addMeasure(position = "topleft",
                primaryLengthUnit = "kilometers",
                primaryAreaUnit = "hectares",
@@ -249,32 +259,45 @@ observe({
   req(reacted.data()) # Do this if reacted.data() is not null
   
   #set palette
-  pal1<- colorNumeric(palette = "viridis", domain = dat.filt()$tseg)
+  pal1<- colorNumeric(palette = "Spectral", domain = dat.filt()$tseg)
   # pal1.rev<- colorNumeric(palette = "viridis", domain = dat.filt()$tseg, reverse = T)
+  
   
   df<- reactive({
     df<- reacted.data()
     
-    # dat.store<- list()
-    # for (i in 2:length(unique(df$tseg))) {
-    # 
-    # tmp<- df %>% 
-    #   filter(tseg == i) %>% 
-    #   slice(1)
-    # tmp$tseg<- i-1
-    # 
-    # dat.store[[i-1]]<- rbind(df %>% 
-    #           filter(tseg == i-1),
-    #         tmp)
-    # }
-    # 
-    # df<- bind_rows(dat.store)
-    # df<- rbind(df, df[df$tseg == max(df$tseg),])
+#   dat.store<- list()
+# for (i in 2:length(unique(df$tseg))) {
+#   
+#   tmp<- df %>% 
+#     filter(tseg == i) %>% 
+#     slice(1)
+#   tmp$tseg<- i-1
+#   tmp$x<- tmp$x + runif(1, -1, 1)  #offset for unique x coord
+#   tmp$y<- tmp$y + runif(1, -1, 1)  #offset for unique y coord
+#   
+#   dat.store[[i-1]]<- rbind(df %>% 
+#               filter(tseg == i-1),
+#             tmp)
+#     
+# }
+# 
+# dat.store2<- bind_rows(dat.store)
+# dat.store2<- rbind(dat.store2, df[df$tseg == max(df$tseg),])
+
+dat.sf<- st_as_sf(df, coords = c("x","y"), crs = 32617) %>%
+  st_transform(4326)
+dat.sf<- dat.sf %>% 
+  group_by(tseg) %>% 
+  summarize(do_union=F) %>% 
+  st_cast("LINESTRING")
+
+dat.sf
     
-    df %>% 
-      group_by(tseg) %>% 
-      summarize(do_union=F) %>% 
-      st_cast("LINESTRING")
+    # coords<- df[,c("x","y")]
+    # utm.crs<- CRS("+init=epsg:32617")
+    # dat.spdf<- SpatialPointsDataFrame(coords = coords, data = df, proj4string = utm.crs)
+    # dat.spdf<- spTransform(dat.spdf, CRS("+init=epsg:4326"))
   })
   
   # df<- reactive({
@@ -320,6 +343,10 @@ observe({
   
   # Clear old selection on map, and add new selection
   leafletProxy('map', data = df()) %>%
+  # fitBounds(min(unlist(map(df()$geometry,1))),
+  #           min(unlist(map(df()$geometry,2))),
+  #           max(unlist(map(df()$geometry,1))),
+  #           max(unlist(map(df()$geometry,1)))) %>% 
   clearControls() %>%
   clearShapes() %>% 
   addPolylines(#lng = unlist(map(reacted.data()$geometry,1)),
