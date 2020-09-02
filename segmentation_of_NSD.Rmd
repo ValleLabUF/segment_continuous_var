@@ -6,7 +6,7 @@ output:
     orientation: rows
     vertical_layout: fill
     social: menu
-    source_code: https://github.com/joshcullen/segment_continuous_var
+    source_code: https://github.com/ValleLabUF/segment_continuous_var
     theme: journal
 ---
 
