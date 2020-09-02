@@ -1,0 +1,358 @@
+---
+title: "Exploration of Coarse-Scale Snail Kite Behavior"
+runtime: shiny
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: rows
+    vertical_layout: fill
+    social: menu
+    source_code: https://github.com/joshcullen/segment_continuous_var
+    theme: journal
+---
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+library(shiny)
+library(dplyr)
+# library(ggplot2)
+library(purrr)
+library(sf)
+library(rgdal)
+# library(raster)
+library(viridis)
+library(rgeos)
+# library(tidyr)
+library(leaflet)
+# library(highcharter)
+# library(bayesmove)
+library(lubridate)
+# library(plotly)
+library(dygraphs)
+# library(xts)
+# library(purrrlyr)
+
+#####################
+#### Import data ####
+#####################
+
+# source('helper functions.R')
+
+dat<- read.csv("Snail Kite Gridded Data_TOHO_R2n.csv", header = T, sep = ",")
+brkpts<- read.csv("Snail Kite NSD Breakpoints.csv", header = T, sep = ",")
+
+dat$id<- as.character(dat$id)
+dat$date<- as_datetime(dat$date)
+
+
+#make reactive NSD data
+dat.filt<- reactive({
+  
+d<- dat[dat$id == input$animal_id, ]
+dat.sf<- st_as_sf(d, coords = c("x","y"), crs = 32617) %>%
+  st_transform(4326)
+# dat.sf<- dat.sf %>%
+#   st_cast("LINESTRING")
+
+return(dat.sf)
+})
+
+
+
+```
+
+
+
+Sidebar {.sidebar}
+======================================================================
+
+```{r}
+# Define inputs
+selectInput('animal_id', label = 'Select an ID', choices = unique(dat$id), selected = "SNIK 12")
+
+```
+
+Use the __Explore track segments__ tab to explore how the segmentation model breaks up each track based on net squared displacement (NSD). The vertical turquoise lines on the lineplot of NSD represents the breakpoints estimated by the model. Click and drag on the lineplot to highlight the corresponding time range on the map below. Grey shaded regions indicate peak breeding season (March 1^st^ to June 30^th^).
+
+Click the __View separate segments__ tab to view a facet plot of all track segments separately for each ID. This provides a quick overview of all track segments separately, making it easy to visualize movement patterns.  
+
+Application author: [Josh Cullen](https://joshcullen.github.io/), [University of Florida](http://www.ufl.edu)
+
+
+Explore track segments
+======================================================================
+
+Row
+-----------------------------------------------------------------------
+
+### Net Squared Displacement Time-Series
+
+```{r}
+
+# Plot the NSD line trace with Plotly
+# output$lineplot <- renderPlotly({
+#   
+#   key<- dat.filt()$id # This will uniquely identify tracts for Plotly
+#   
+#   p1<- ggplot(dat.filt()) + 
+#     geom_line(aes(date, NSD, key = key)) + 
+#     theme_bw() + 
+#     theme(panel.grid = element_blank(),
+#           axis.title = element_text(size = 16),
+#           axis.text = element_text(size = 12)) + 
+#     labs(x = 'Date', expression("NSD ", (m^2)))
+#     
+#   g<- ggplotly(p1, source = 'source') %>% 
+#     layout(dragmode = 'zoom', 
+#            # yaxis = list(title = 'Diversity score'), 
+#            margin = list(l = 100), 
+#            font = list(family = 'Open Sans', size = 16))
+#   
+#   # Need to manually set the hoverinfo to avoid the key appearing in it
+#   build<- plotly_build(g)
+#   
+#   build$data[[1]]$text <- paste0('NSD = ', round(dat.filt()$NSD, 2), '<br>', 
+#                                'Track Segment ', dat.filt()$tseg) 
+#   build
+#     
+# })  
+# 
+# plotlyOutput('lineplot', width = "80%")
+
+
+
+
+
+
+
+#make reactive brkpt data
+brkpts.filt<- reactive({
+  
+  b<- brkpts[brkpts$id == unique(dat.filt()$id), ] %>% 
+    purrr::discard(is.na)
+  b<- b[,-1]
+  b2<- dat.filt()$date[as.numeric(b)]
+  
+  return(b2)
+  
+})
+
+output$lineplot<- renderDygraph({
+  
+  series<- reactive({xts::xts(x = cbind(dat.filt()$NSD / 1e06, dat.filt()$tseg),
+                   order.by = dat.filt()$date)
+  })
+  
+dygraph(series()) %>%
+    dySeries("V1", label = "NSD", strokeWidth = 1.5) %>% 
+    dySeries("V2", label = "Segment", strokeWidth = 0) %>% 
+    dyAxis("y", label = "NSD (km<sup>2</sup>)", axisLabelFontSize = 16, axisLabelWidth = 75) %>%
+    dyRangeSelector(dateWindow = NULL) %>% 
+    dyOptions(axisLineWidth = 1.5, drawGrid = FALSE, colors = "black") %>% 
+    dyLegend(width = 375) %>% 
+    dyShading(from = "2018-03-01", to = "2018-06-30") %>%
+    dyShading(from = "2019-03-01", to = "2019-06-30") %>% 
+    dyUnzoom() %>% 
+    dyCrosshair(direction = "vertical") %>% 
+    dyEvent(brkpts.filt(), color = "darkturquoise", strokePattern = "solid")
+    
+})
+
+
+reacted.data<- reactive({
+  req(input$lineplot_date_window)  #to prevent warning from 'if' expression
+  
+  start=strptime(input$lineplot_date_window[[1]], format = "%Y-%m-%dT%H:%M:%S", tz = "UTC")
+  end=strptime(input$lineplot_date_window[[2]], format = "%Y-%m-%dT%H:%M:%S", tz = "UTC")
+
+    if (start == min(dat.filt()$date) & end == max(dat.filt()$date)){
+      dat.filt()
+    } else {
+      subset = dplyr::filter(dat.filt(), date >= start & date <= end)
+      return(subset)
+    }
+  })
+
+
+dygraphOutput("lineplot")
+```
+
+
+Row
+-----------------------------------------------------------------------
+
+### Map of track segments
+
+```{r}
+
+## Data for Leaflet
+
+
+# grouped_coords <- function(coord, group) {
+#   data.frame(coord = coord, group = group) %>%
+#     slice_rows("group") %>%
+#     by_slice(~c(.$coord, NA), .to = "output") %>%
+#     .$output %>% unlist()
+# }
+
+
+
+
+# Draw the map without selected tracts
+output$map <- renderLeaflet({
+
+    leaflet(options = leafletOptions(preferCanvas = TRUE)) %>%
+    addProviderTiles(providers$Esri.OceanBasemap, group = "Ocean Basemap",
+                        options = tileOptions(continuous_world = F)) %>%
+    addPolylines(data = dat.filt(),
+                 lng = unlist(map(dat.filt()$geometry,1)),
+                 lat = unlist(map(dat.filt()$geometry,2)),
+                 weight = 2,
+                 layerId = ~unique(id),
+                 color = "grey") %>%
+    addMeasure(position = "topleft",
+               primaryLengthUnit = "kilometers",
+               primaryAreaUnit = "hectares",
+               activeColor = "#3D535D",
+               completedColor = "#7D4479") %>%
+    addMiniMap(tiles = providers$Esri.OceanBasemap,
+               toggleDisplay = TRUE,
+               position = "bottomleft")
+  })
+
+####---------------------------------------------------
+
+# # Drag event for the NSD lineplot; will filter by time window
+# click_tract <- eventReactive(input$map_shape_click, {
+#     x <- input$map_shape_click
+#     y <- x$id
+#     return(y)
+#   })
+# 
+# 
+# 
+# 
+# 
+# 
+# 
+# # Click event for the map (will use to generate chart)
+# click_tract <- eventReactive(input$map_shape_click, {
+#     x <- input$map_shape_click
+#     y <- x$id
+#     return(y)
+#   })
+# 
+# # 
+
+#----------------------------------------------------------------
+# MY UPDATED MAP
+observe({
+  req(reacted.data()) # Do this if reacted.data() is not null
+  
+  #set palette
+  pal1<- colorNumeric(palette = "viridis", domain = dat.filt()$tseg)
+  # pal1.rev<- colorNumeric(palette = "viridis", domain = dat.filt()$tseg, reverse = T)
+  
+  df<- reactive({
+    df<- reacted.data()
+    
+    # dat.store<- list()
+    # for (i in 2:length(unique(df$tseg))) {
+    # 
+    # tmp<- df %>% 
+    #   filter(tseg == i) %>% 
+    #   slice(1)
+    # tmp$tseg<- i-1
+    # 
+    # dat.store[[i-1]]<- rbind(df %>% 
+    #           filter(tseg == i-1),
+    #         tmp)
+    # }
+    # 
+    # df<- bind_rows(dat.store)
+    # df<- rbind(df, df[df$tseg == max(df$tseg),])
+    
+    df %>% 
+      group_by(tseg) %>% 
+      summarize(do_union=F) %>% 
+      st_cast("LINESTRING")
+  })
+  
+  # df<- reactive({
+  #   df<- reacted.data() %>% 
+  #     mutate(col = pal1(reacted.data()$tseg))
+  #   
+  #   return(df)
+  # })
+  
+  # df<- reactive({
+  #   df<- data.frame(id = reacted.data()$id,
+  #                   lon = unlist(map(reacted.data()$geometry,1)),
+  #                   lat = unlist(map(reacted.data()$geometry,2)),
+  #                   date = reacted.data()$date,
+  #                   tseg = reacted.data()$tseg)
+  #   df = df %>%
+  #   dplyr::mutate(
+  #     # str_c returns NA when one of the arguments is NA
+  #     # last lead() element is NA and will be dropped
+  #     geom_wkt = stringr::str_c(
+  #       "LINESTRING (",
+  #       stringr::str_c(
+  #         stringr::str_c(lon, lat, sep = " "),
+  #         stringr::str_c(lead(lon), lead(lat), sep = " "),
+  #         sep = ", "
+  #       ),
+  #       ")"
+  #     )
+  #   # add your color palette here!
+  #   ) %>%
+  #   dplyr::select(-lon, -lat) %>%
+  #   # readWKT cannot handle NAs
+  #   tidyr::drop_na() %>%
+  #   sf::st_as_sf(wkt = "geom_wkt", crs = 4326)
+  #   
+  #   return(df)
+  # })
+  
+  #Line labels
+  line.lab<- sprintf("<strong>Segment %i</strong>",
+                     df()$tseg) %>%
+             lapply(htmltools::HTML)
+  
+  # Clear old selection on map, and add new selection
+  leafletProxy('map', data = df()) %>%
+  clearControls() %>%
+  clearShapes() %>% 
+  addPolylines(#lng = unlist(map(reacted.data()$geometry,1)),
+               #lat = unlist(map(reacted.data()$geometry,2)),
+               weight = 2,
+               color = ~pal1(tseg),
+               opacity = 0.7,
+               label = line.lab) %>%
+    addLegend("topright",
+              pal = pal1,
+              values = ~tseg,
+              title = "Segment #",
+              opacity = 1)
+})
+#----------------------------------------------------------------
+
+# observe({
+#   
+#   req(click_tract()) # do this if click_tract() is not null
+#   
+#   # Add the clicked tract to the map in aqua, and remove when a new one is clicked
+#   map <- leafletProxy('map') %>%
+#       removeShape('htract') %>%
+#       addPolygons(data = full_tracts[full_tracts$GEOID == click_tract(), ], fill = FALSE,
+#                   color = '#00FFFF', opacity = 1, layerId = 'htract')
+#   })
+# tract_data <- reactive({
+#   
+#     # Fetch data for the clicked tract
+#     return(metro()@data[metro()@data$GEOID == click_tract(), ])
+#   })
+
+leafletOutput('map')
+
+
+```

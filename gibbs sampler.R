@@ -1,6 +1,4 @@
 gibbs.time.seg=function(dat,ngibbs,mu0,tau2,var) {  #where var is name of col of interest
-  set.seed(1)
-  
   uni.id=unique(dat$id)
   dat.comp=dat[complete.cases(dat),]
   
@@ -53,11 +51,27 @@ segment_time_continuous=function(data, ngibbs, mu0, tau2, var) {
   
   brkpts<- map(mod, 1)  #create list of all sets breakpoints by ID
   
-  nbrks<- map_dfr(mod, 2) %>% t() %>% data.frame()  #create DF of number of breakpoints by ID
-  names(nbrks)<- c('id', paste0("Iter_",1:ngibbs))
+  nbrks<- purrr::map_dfr(mod, 2) %>%
+    unlist() %>%
+    matrix(.data, nrow = length(mod), ncol = (ngibbs + 1), byrow = T) %>%
+    data.frame()  #create DF of number of breakpoints by ID
+  names(nbrks)<- c('id', paste0("Iter_", 1:ngibbs))
+  ncol.nbrks<- ncol(nbrks)
+  nbrks<- nbrks %>%
+    dplyr::mutate_at(2:ncol.nbrks, as.character) %>%
+    dplyr::mutate_at(2:ncol.nbrks, as.numeric) %>%
+    dplyr::mutate_at(1, as.character)
   
-  LML<- map_dfr(mod, 3) %>% t() %>% data.frame()  #create DF of LML by ID
-  names(LML)<- c('id', paste0("Iter_",1:ngibbs))
+  LML<- purrr::map_dfr(mod, 3) %>%
+    unlist() %>%
+    matrix(.data, nrow = length(mod), ncol = (ngibbs + 1), byrow = T) %>%
+    data.frame()  #create DF of LML by ID
+  names(LML)<- c('id', paste0("Iter_", 1:ngibbs))
+  ncol.LML<- ncol(LML)
+  LML<- LML %>%
+    dplyr::mutate_at(2:ncol.LML, as.character) %>%
+    dplyr::mutate_at(2:ncol.LML, as.numeric) %>%
+    dplyr::mutate_at(1, as.character)
   
   
   list(brkpts = brkpts, nbrks = nbrks, LML = LML)

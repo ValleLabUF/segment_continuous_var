@@ -61,23 +61,25 @@ getBreakpts=function(dat,ML,identity) {  #extract breakpoints of ML per ID
   tmp
 }
 #------------------------------------------------
-plot.brks.indiv=function(data, brkpts, dat.res, var) {
+plot.brks.indiv=function(data, brkpts, var) {
   
   ind=which(unique(data$id) == brkpts$id)
-  breakpt<- brkpts[ind,-1] %>% discard(is.na) %>% t() %>% data.frame()
+  breakpt<- brkpts[ind,-1] %>% 
+    discard(is.na) %>% t() %>% 
+    data.frame()
   names(breakpt)<- "breaks"
   
   
-  plot(dat.list[[ind]][,var], type="l", xlab = "Time", ylab = var, main = paste("ID",
-                                                                 unique(dat.list[[ind]][,"id"])))
+  plot(data[,var], type="l", xlab = "Time", ylab = var, main = paste("ID",
+                                                                 unique(data[,"id"])))
   abline(v=brkpts[ind,], col="grey")
   
 }
 #------------------------------------------------
-plot.brks=function(data, brkpts, dat.res, var) {  
+plot.brks=function(dat.list, brkpts, var) {  
   
     par(ask = TRUE)
-    map(data, ~plot.brks.indiv(., brkpts = brkpts, dat.res = dat.res, var = var))
+    map(dat.list, ~plot.brks.indiv(., brkpts = brkpts, var = var))
     par(ask = FALSE)
   
 }

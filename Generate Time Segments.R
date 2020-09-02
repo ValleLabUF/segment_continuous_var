@@ -5,27 +5,20 @@ library(progress)
 library(furrr)
 library(tictoc)
 library(viridis)
-library(forecast)
 
 source('gibbs functions.R')
 source('helper functions.R')
 source('gibbs sampler.R')
 
+set.seed(1)
 
 ###############################
 #### Load and Prepare Data ####
 ###############################
 
 dat<- read.csv("Snail Kite Gridded Data_TOHO.csv", header = T, sep = ",")
-dat.list<- df.to.list(dat = dat)
-
-# #smooth time series of R2n w/ moving average and add column for time
-# dat.list<- map(dat.list, function(x) x %>% mutate(R2n.ma = as.numeric(forecast::ma(R2n, order = 10,
-#                                                                         centre = TRUE)),
-#                                                   time1 = 1:length(x)))
-
-# #only select necessary cols
-# dat.list<- map(dat.list, ~dplyr::select(., c(id, R2n.ma, time1)))
+dat$id<- as.character(dat$id)
+dat.list<- bayesmove::df_to_list(dat = dat, ind = "id")
 
 
 # Add time1 col
@@ -36,7 +29,7 @@ dat.list<- get_NSD(dat.list) %>%
 dat.list<- map(dat.list, ~mutate_at(., "NSD", ~{. / max(NSD)}))
 
 # Add small value to keep obs where NSD = 0 from turning to -Inf after log-transform
-dat.list<- map(dat.list, ~mutate_at(., "NSD", ~{. + 1e-09}))
+dat.list<- map(dat.list, ~mutate_at(., "NSD", ~{. + 1e-12}))
 
 #Log-transform NSD
 dat.list<- map(dat.list, ~mutate(., log.NSD = log(.$NSD)))
@@ -60,52 +53,25 @@ plan(multisession)  #run all MCMC chains in parallel
 
 dat.res<- segment_time_continuous(data = dat.list, ngibbs = ngibbs, mu0 = mu0, tau2 = tau2,
                                   var = "log.NSD")
-###Takes 2.5 min to run for 10000 iterations for all IDs
+###Takes 5 min to run for 10000 iterations for all IDs
 
 
 ## Traceplots
-#type is either 'nbrks' or 'LML' for y-axis label
-identity<- names(dat.list)
-
-traceplot(data = dat.res$nbrks, type = "nbrks", identity = identity)
-traceplot(data = dat.res$LML, type = "LML", identity = identity)
+bayesmove::traceplot(data = dat.res$nbrks, ngibbs = ngibbs, type = "nbrks")
+bayesmove::traceplot(data = dat.res$LML, ngibbs = ngibbs, type = "LML")
 
 
 
-## Determine maximum likelihood (ML) for selecting breakpoints
-ML<- apply(dat.res$LML, 1, function(x) getML(dat = x, nburn = 5000))
-brkpts<- getBreakpts(dat = dat.res$brkpts, ML = ML, identity = identity)
+##Determine maximum a posteriori (MAP) estimate for selecting breakpoints
+MAP.est<- bayesmove::get_MAP(dat.res$LML, nburn = ngibbs/2)
+brkpts<- bayesmove::get_breakpts(dat = dat.res$brkpts, MAP.est = MAP.est)
+
 
 
 ## Plots of data and breakpoints
-plot.brks(data = dat.list, brkpts = brkpts, dat.res = dat.res, var = "log.NSD")
+plot.brks(dat.list = dat.list, brkpts = brkpts, var = "log.NSD")
 
 
-######################################
-#### Assign Spatial Time Segments ####
-######################################
-
-
-
-dat_out<- map(dat.list, assign.time.seg, brkpts = brkpts) %>% map_dfr(`[`)  #assign time seg and make as DF
-
-
-### Map time segments of net-squared displacement
-
-dat12<- dat_out %>% filter(id=="SNIK 12")
-
-ggplot(data = dat12, aes(x,y)) +
-  geom_path(aes(color=tseg), size=0.5, alpha=0.7) +
-  theme_bw() +
-  scale_color_viridis_c() +
-  coord_equal()
-
-ggplot(data = dat12, aes(x,y)) +
-  geom_path(size=0.5, alpha=0.7, color = "grey75") +
-  geom_path(data = dat12 %>% filter(tseg == 1), aes(color=time1), size=0.5) +
-  theme_bw() +
-  scale_color_viridis_c() +
-  coord_equal()
 
 
 
@@ -114,9 +80,13 @@ ggplot(data = dat12, aes(x,y)) +
 
 dat.list2<- map(dat.list, assign.time.seg, brkpts = brkpts) %>% 
   map(~bayesmove::df_to_list(.x, ind = "tseg")) %>%
-  modify_depth(2, ~mutate(.x, log.NSD_n = log.NSD - min(log.NSD, na.rm = T))) %>%
-  modify_depth(1, ~map_dfr(.x, `[`))
+  modify_depth(2, ~mutate(.x, log.NSD_n = log.NSD - min(log.NSD, na.rm = T))) #%>%
+  # modify_depth(1, ~map_dfr(.x, `[`))
 
+foo<- flatten(dat.list2)
+names1<- map(dat.list2, length) %>% 
+  unlist()
+names(foo)<- paste(rep(names(names1), names1), names(foo), sep = "_")
 
 
 #priors
@@ -130,49 +100,37 @@ plan(multisession)  #run all MCMC chains in parallel
 #select "multiprocess" if Unix or macOS & "multisession" if Windows
 #refer to future::plan() for more details
 
-dat.res2<- segment_time_continuous(data = dat.list2, ngibbs = ngibbs, mu0 = mu0, tau2 = tau2,
+dat.res2<- segment_time_continuous(data = foo, ngibbs = ngibbs, mu0 = mu0, tau2 = tau2,
                                   var = "log.NSD_n")
-###Takes 4 min to run for 10000 iterations for all IDs
+###Takes 11 min to run for 10000 iterations for all segments
 
 
 ## Traceplots
 #type is either 'nbrks' or 'LML' for y-axis label
-traceplot(data = dat.res2$nbrks, type = "nbrks", identity = identity)
-traceplot(data = dat.res2$LML, type = "LML", identity = identity)
+bayesmove::traceplot(data = dat.res2$nbrks, ngibbs = ngibbs, type = "nbrks")
+bayesmove::traceplot(data = dat.res2$LML, ngibbs = ngibbs, type = "LML")
 
 
-## Determine maximum likelihood (ML) for selecting breakpoints
-ML2<- apply(dat.res2$LML, 1, function(x) getML(dat = x, nburn = 5000))
-brkpts2<- getBreakpts(dat = dat.res2$brkpts, ML = ML2, identity = identity)
-
+##Determine maximum a posteriori (MAP) estimate for selecting breakpoints
+MAP.est2<- bayesmove::get_MAP(dat.res2$LML, nburn = ngibbs/2)
+brkpts2<- bayesmove::get_breakpts(dat = dat.res2$brkpts, MAP.est = MAP.est2)
+brkpts2$id<- sub("\\_.*", "", brkpts2$id)  #modify id to remove segment index
+brkpts2_merged<- brkpts2 %>%
+  gather(key, value, -id) %>% 
+  dplyr::select(-key) %>% 
+  na.omit() %>% 
+  pivot_wider(names_from = id, values_from = value, values_fn = list(value = list)) %>% 
+  flatten() %>% 
+  map(., . %>% 
+        t() %>% 
+        data.frame()) %>% 
+  bind_rows() %>% 
+  mutate(id = names(dat.list2)) %>% 
+  # relocate(id)
+  dplyr::select(id, everything())
 
 ## Plots of data and breakpoints
-plot.brks(data = dat.list2, brkpts = brkpts2, dat.res = dat.res2, var = "log.NSD_n")
-
-
-
-dat_out2<- map(dat.list2, assign.time.seg, brkpts = brkpts2) %>% map_dfr(`[`)
-
-
-
-
-### Map time segments of net-squared displacement
-
-dat12<- dat_out2 %>% filter(id=="SNIK 12")
-
-ggplot(data = dat12, aes(x,y)) +
-  geom_path(aes(color=tseg), size=0.5, alpha=0.7) +
-  theme_bw() +
-  scale_color_viridis_c() +
-  coord_equal()
-
-ggplot() +
-  geom_path(data = dat12, aes(x, y, color=time1), size=0.5) +
-  theme_bw() +
-  scale_color_viridis_c() +
-  coord_equal() +
-  facet_wrap(~tseg)
-
+plot.brks(dat.list = dat.list, brkpts = brkpts2_merged, var = "NSD")
 
 
 
@@ -181,40 +139,63 @@ ggplot() +
 #create DF for breakpoints
 #index brkpts for particular id
 ind<- which(names(dat.list) == "SNIK 12")
-breakpt<- brkpts2[ind,-1] %>%
+breakpt<- brkpts[ind,-1] %>%
   purrr::discard(is.na) %>%
   t() %>%
-  data.frame()
-names(breakpt)<- "breaks"
+  data.frame() %>% 
+  rename(breaks = SNIK.12)
 
+breakpt2<- brkpts2_merged[ind,-1] %>%
+  purrr::discard(is.na) %>%
+  t() %>%
+  data.frame() %>% 
+  rename(breaks = X22)
 
-#plot comparison of NSD v log(NSD) in relation to breakpoints
+#plot comparison of NSD in relation to breakpoints
 ggplot() +
-  geom_line(data = foo %>% filter(id == "SNIK 12"), aes(time1, NSD/max(NSD), color = "NSD")) +
-  geom_line(data = foo %>% filter(id == "SNIK 12"), aes(time1, log(NSD)/max(log(NSD)),
-                                                        color = "log(NSD)")) +
-  geom_vline(data = breakpt, aes(xintercept = breaks)) + 
+  geom_line(data = dat.list$`SNIK 12`, aes(time1, NSD)) +
+  geom_vline(data = breakpt, aes(xintercept = breaks), color = "darkturquoise") +
+  # geom_vline(data = breakpt2, aes(xintercept = breaks), color = "firebrick") +
   facet_wrap(~id, scales = "free") +
   theme_bw() +
-  labs(x = "Time", y = "Normalized Net Squared Displacement") +
+  labs(x = "Time", y = "NSD") +
   theme(strip.text = element_text(size = 16),
         axis.title = element_text(size = 18),
         axis.text = element_text(size = 14))
 
 
+######################################
+#### Assign Spatial Time Segments ####
+######################################
+
+dat_out<- bayesmove::assign_tseg(dat.list, brkpts = brkpts)  #assign time seg and make as DF
+dat_out$NSD<- dat$R2n  #include NSD on original scale
+
+### Map time segments of net-squared displacement
+
+dat12<- dat_out %>% filter(id=="SNIK 12")
+
+ggplot(data = dat12, aes(x,y)) +
+  geom_path(aes(color=tseg), size=0.5, alpha=0.7) +
+  theme_bw() +
+  scale_color_viridis_c() +
+  coord_equal()
+
+
+ggplot(data = dat12, aes(x,y)) +
+  geom_path(size=0.75) +
+  theme_bw() +
+  theme(panel.grid = element_blank()) +
+  coord_equal() +
+  facet_wrap(~tseg)
+
+
+
+
+
+
+
 
 #Export
-write.csv(dat_out, "Snail Kite Gridded Data_TOHO_R2n.csv", row.names = F)
-
-
-
-
-
-
-
-
-
-
-
-
-
+# write.csv(dat_out, "Snail Kite Gridded Data_TOHO_R2n.csv", row.names = F)
+# write.csv(brkpts, "Snail Kite NSD Breakpoints.csv", row.names = F)
