@@ -5,8 +5,8 @@ account: joshcullen
 server: shinyapps.io
 hostUrl: https://api.shinyapps.io/v1
 appId: 2737902
-bundleId: 3585836
+bundleId: 3589349
 url: https://joshcullen.shinyapps.io/segmentation_of_NSD/
-when: 1599082666.12695
+when: 1599149785.19279
 asMultiple: FALSE
 asStatic: FALSE
