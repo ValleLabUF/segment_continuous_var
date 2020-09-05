@@ -227,7 +227,7 @@ observe({
 
     dat.sf<- st_as_sf(df, coords = c("x","y"), crs = 32617) %>%
       st_transform(4326) %>%
-      summarize(do_union = FALSE) %>%
+      # summarize(do_union = FALSE) %>%
       st_cast("LINESTRING") #%>% 
       # mutate(x = unlist(map(.$geometry,1)),
       #        y = unlist(map(.$geometry,2))) %>%
@@ -248,7 +248,9 @@ observe({
             as.numeric(st_bbox(df())[2]),
             as.numeric(st_bbox(df())[3]),
             as.numeric(st_bbox(df())[4])) %>%
-  addPolylines(weight = 2,
+  addPolylines(lng = as.numeric(st_coordinates(df())[,1]),
+               lat = as.numeric(st_coordinates(df())[,2]),
+               weight = 2,
                color = "darkturquoise",
                opacity = 0.5) #%>% 
   # addCircleMarkers(data = df() %>% 
