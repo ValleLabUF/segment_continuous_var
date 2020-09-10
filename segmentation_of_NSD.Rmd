@@ -3,12 +3,39 @@ title: "Exploration of Coarse-Scale Snail Kite Behavior"
 runtime: shiny
 output: 
   flexdashboard::flex_dashboard:
-    orientation: columns
+    orientation: rows
     vertical_layout: fill
     social: menu
     source_code: https://github.com/ValleLabUF/segment_continuous_var
     theme: journal
 ---
+<style>
+.navbar-inverse {
+  background-color: blue;
+  border-color: white;
+}
+
+.navbar-inverse .navbar-brand:hover,
+.navbar-inverse .navbar-brand:focus {
+  color: white;
+  background-color: #FF7F00;
+}
+
+.navbar-inverse .navbar-nav > li > a:hover,
+.navbar-inverse .navbar-nav > li > a:focus {
+  color: white;
+  background-color: #FF7F00;
+}
+
+.navbar-inverse .navbar-nav > .active > a,
+.navbar-inverse .navbar-nav > .active > a:hover,
+.navbar-inverse .navbar-nav > .active > a:focus {
+  color: white;
+  background-color: #FF7F00;
+}
+</style>
+
+
 
 ```{r setup, include=FALSE}
 library(flexdashboard)
@@ -56,8 +83,19 @@ return(d)
 
 
 
-Sidebar {.sidebar}
+
+
+Explore NSD
 ======================================================================
+
+Sidebar {.sidebar}
+-----------------------------------------------------------------------
+<style>
+.section.sidebar {
+  top: 61px;
+  background-color: rgba(255, 127, 0, 0.25);
+}
+</style>
 
 ```{r}
 # Define inputs
@@ -67,15 +105,15 @@ selectInput('animal_id', label = 'Select an ID', choices = unique(dat$id), selec
 
 Use the __Explore NSD__ tab to explore temporal patterns in net squared displacement (NSD). Click and drag on the lineplot to highlight the corresponding time range on the map below. Grey shaded regions indicate peak breeding season (March 1^st^ to June 30^th^).
 
-Click the __View all tracks__ tab to view tracks for all individuals. This provides a quick overview of all track segments separately and allows for filtering tracks by different variables.  
+Click the __View all tracks__ tab to view tracks for all individuals. This provides a quick overview of all track segments separately and allows for filtering tracks by time.  
 
 Application author: [Josh Cullen](https://joshcullen.github.io/), [University of Florida](http://www.ufl.edu)
 
 
-Explore NSD
-======================================================================
 
-Column
+
+
+Row
 -----------------------------------------------------------------------
 
 ### Net Squared Displacement Time-Series
@@ -165,8 +203,6 @@ dygraphOutput("lineplot")
 ```
 
 
-Column
------------------------------------------------------------------------
 
 ### Track Map
 
@@ -252,7 +288,7 @@ observe({
                lat = as.numeric(st_coordinates(df())[,2]),
                weight = 2,
                color = "darkturquoise",
-               opacity = 0.5) #%>% 
+               opacity = 0.8) #%>% 
   # addCircleMarkers(data = df() %>% 
   #                    summarize(do_union = F) %>% 
   #                    st_cast("POINT") %>% 
@@ -274,11 +310,118 @@ leafletOutput('map')
 View all tracks
 ======================================================================
 
-Column
+Sidebar {.sidebar}
+-----------------------------------------------------------------------
+<style>
+.section.sidebar {
+  top: 61px;
+  background-color: rgba(255, 127, 0, 0.25);
+}
+</style>
+
+<br />
+<br />
+
+Use the __Explore NSD__ tab to explore temporal patterns in net squared displacement (NSD). Click and drag on the lineplot to highlight the corresponding time range on the map below. Grey shaded regions indicate peak breeding season (March 1^st^ to June 30^th^).
+
+Click the __View all tracks__ tab to view tracks for all individuals. This provides a quick overview of all track segments separately and allows for filtering tracks by time.  
+
+Application author: [Josh Cullen](https://joshcullen.github.io/), [University of Florida](http://www.ufl.edu)
+
+
+Row {data-height=150, align="center"}
+-----------------------------------------------------------------------
+
+### Dates
+
+<style>
+.irs-bar {width: 100%; height: 10px;}
+.irs-line {border: 1px solid black; height: 10px; border-radius: 0px;}
+      .irs-max {font-family: 'arial'; color: black;}
+      .irs-min {font-family: 'arial'; color: black;}
+      .irs-single {color:black; background:#6666ff;}
+      .irs-grid-text {font-size: 12pt; color: black}
+      
+</style>
+
+```{r}
+# Define inputs
+
+div(style="width: 1000px; ", sliderInput("range", NULL,
+                  min = min(dat$date), max = max(dat$date),
+                  value = range(dat$date), width = '100%', step = 90))
+```
+
+
+Row {data-height=850}
 -----------------------------------------------------------------------
 
 ### Map of All Tracks
 
 ```{r}
 
+#make reactive data based on slider input
+dat.filt2<- reactive({
+  
+d2<- dat[dat$date >= input$range[1] & dat$date <= input$range[2], ]
+return(d2)
+})
+
+# Draw the map without selected tracts
+output$map_all <- renderLeaflet({
+
+    #format data where each ID is a linestring
+    dat.sf<- st_as_sf(dat.filt2(), coords = c("x","y"), crs = 32617) %>%
+             st_transform(4326) %>% 
+             group_by(id) %>% 
+             summarize(do_union=F) %>% 
+             st_cast("LINESTRING")
+    
+    #set palette
+    pal1<- colorFactor(palette = "viridis", domain = dat.sf$id)
+
+  
+    #set bounds for map
+    # bounds<- reactive({
+    #   dat.sf<- st_as_sf(dat.filt(), coords = c("x","y"), crs = 32617) %>%
+    #     st_transform(4326)
+    #   extent<- as.numeric(st_bbox(dat.sf))
+    #   
+    #   return(extent)
+    # })
+  
+    
+    leaflet(options = leafletOptions(preferCanvas = TRUE)) %>%
+    addProviderTiles(providers$Esri.OceanBasemap, group = "Ocean Basemap",
+                        options = tileOptions(continuous_world = F)) %>%
+    addProviderTiles(providers$Esri.WorldImagery, group = "World Imagery",
+                        options = tileOptions(continuous_world = F)) %>%
+    addProviderTiles(providers$CartoDB.DarkMatterNoLabels, group = "Dark Map",
+                        options = tileOptions(continuous_world = F)) %>%
+    # fitBounds(bounds()[1], bounds()[2], bounds()[3], bounds()[4]) %>% 
+    addPolylines(data = dat.sf,
+                 # lng = unlist(map(dat.filt()$geometry,1)),
+                 # lat = unlist(map(dat.filt()$geometry,2)),
+                 weight = 2,
+                 # layerId = ~unique(id),
+                 color = ~pal1(id)) %>%
+    leaflet::addLegend("bottomright",
+                 pal = pal1,
+                 values = dat.sf$id,
+                 title = "ID",
+                 opacity = 1) %>%
+    addMeasure(position = "topleft",
+               primaryLengthUnit = "kilometers",
+               primaryAreaUnit = "hectares",
+               activeColor = "#3D535D",
+               completedColor = "#7D4479") %>%
+    addMiniMap(tiles = providers$Esri.OceanBasemap,
+               toggleDisplay = TRUE,
+               position = "bottomleft") %>% 
+      addScaleBar() %>% 
+      addLayersControl(baseGroups = c("Ocean Basemap", "World Imagery", "Dark Map"), 
+                   options = layersControlOptions(collapsed = TRUE), position = "topleft")
+  })
+
+leafletOutput('map_all')
 ```
