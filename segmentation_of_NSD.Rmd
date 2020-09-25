@@ -57,6 +57,7 @@ library(lubridate)
 library(dygraphs)
 library(xts)
 # library(purrrlyr)
+library(shinyWidgets)
 
 #####################
 #### Import data ####
@@ -273,6 +274,20 @@ observe({
 
   })
   
+  
+  df.pts<- reactive({
+    df<- reacted.data()
+
+    dat.sf<- st_as_sf(df, coords = c("x","y"), crs = 32617) %>%
+       st_transform(4326) %>%
+       summarize(do_union = FALSE) %>%
+       st_cast("POINT") %>% 
+       slice(1, nrow(df))
+
+    dat.sf
+
+  })
+  
    
    
    
@@ -280,6 +295,7 @@ observe({
   leafletProxy('map', data = df()) %>%
   clearControls() %>%
   clearShapes() %>%
+  clearMarkers() %>% 
   fitBounds(as.numeric(st_bbox(df())[1]),
             as.numeric(st_bbox(df())[2]),
             as.numeric(st_bbox(df())[3]),
@@ -288,15 +304,20 @@ observe({
                lat = as.numeric(st_coordinates(df())[,2]),
                weight = 2,
                color = "darkturquoise",
-               opacity = 0.8) #%>% 
-  # addCircleMarkers(data = df() %>% 
-  #                    summarize(do_union = F) %>% 
-  #                    st_cast("POINT") %>% 
-  #                    slice(1))
-                   # radius = ~3,
-                   # fillColor = "#BFBFBF", #rgb(t(col2rgb("grey75")), maxColorValue = 255)
-                   # stroke = FALSE,
-                   # fillOpacity = 0.5)
+               opacity = 0.8) %>% 
+  addCircleMarkers(data = df.pts(),
+                   lng = as.numeric(st_coordinates(df.pts())[1,1]),
+                   lat = as.numeric(st_coordinates(df.pts())[1,2]),
+                   fillColor = "#5EF230",
+                   stroke = FALSE,
+                   fillOpacity = 0.8) %>% 
+  addCircleMarkers(data = df.pts(),
+                   lng = as.numeric(st_coordinates(df.pts())[2,1]),
+                   lat = as.numeric(st_coordinates(df.pts())[2,2]),
+                   fillColor = "red",
+                   stroke = FALSE,
+                   fillOpacity = 0.8)
+  
 })
 
 
@@ -320,7 +341,20 @@ Sidebar {.sidebar}
 </style>
 
 <br />
+```{r}
+pickerInput(
+   inputId = "select_ids",
+   label = "Select/deselect by ID", 
+   choices = unique(dat$id),
+   selected = unique(dat$id),
+   options = list(
+      `actions-box` = TRUE), 
+    multiple = TRUE
+)
+
+```
 <br />
+
 
 Use the __Explore NSD__ tab to explore temporal patterns in net squared displacement (NSD). Click and drag on the lineplot to highlight the corresponding time range on the map below. Grey shaded regions indicate peak breeding season (March 1^st^ to June 30^th^).
 
@@ -362,15 +396,18 @@ Row {data-height=850}
 
 #make reactive data based on slider input
 dat.filt2<- reactive({
-  
-d2<- dat[dat$date >= input$range[1] & dat$date <= input$range[2], ]
+
+d.list<- split(dat, dat$id)  #split data into list by ID
+d2<- bind_rows(d.list[input$select_ids])  #only keep selected IDs
+d2<- d2[d2$date >= input$range[1] & d2$date <= input$range[2], ]  #only keep w/in date range
 return(d2)
 })
 
-# Draw the map without selected tracts
-output$map_all <- renderLeaflet({
 
-    #format data where each ID is a linestring
+# Store map as reactive expression for render and download
+tracks.map<- reactive({
+  
+  #format data where each ID is a linestring
     dat.sf<- st_as_sf(dat.filt2(), coords = c("x","y"), crs = 32617) %>%
              st_transform(4326) %>% 
              group_by(id) %>% 
@@ -379,18 +416,11 @@ output$map_all <- renderLeaflet({
     
     #set palette
     pal1<- colorFactor(palette = "viridis", domain = dat.sf$id)
+    
+    labs<- sprintf("<strong>ID %s</strong><br/>", dat.sf$id) %>%
+       lapply(htmltools::HTML)
 
   
-    #set bounds for map
-    # bounds<- reactive({
-    #   dat.sf<- st_as_sf(dat.filt(), coords = c("x","y"), crs = 32617) %>%
-    #     st_transform(4326)
-    #   extent<- as.numeric(st_bbox(dat.sf))
-    #   
-    #   return(extent)
-    # })
-  
-    
     leaflet(options = leafletOptions(preferCanvas = TRUE)) %>%
     addProviderTiles(providers$Esri.OceanBasemap, group = "Ocean Basemap",
                         options = tileOptions(continuous_world = F)) %>%
@@ -398,13 +428,11 @@ output$map_all <- renderLeaflet({
                         options = tileOptions(continuous_world = F)) %>%
     addProviderTiles(providers$CartoDB.DarkMatterNoLabels, group = "Dark Map",
                         options = tileOptions(continuous_world = F)) %>%
-    # fitBounds(bounds()[1], bounds()[2], bounds()[3], bounds()[4]) %>% 
     addPolylines(data = dat.sf,
-                 # lng = unlist(map(dat.filt()$geometry,1)),
-                 # lat = unlist(map(dat.filt()$geometry,2)),
                  weight = 2,
                  # layerId = ~unique(id),
-                 color = ~pal1(id)) %>%
+                 color = ~pal1(id),
+                 label = labs) %>%
     leaflet::addLegend("bottomright",
                  pal = pal1,
                  values = dat.sf$id,
@@ -421,7 +449,16 @@ output$map_all <- renderLeaflet({
       addScaleBar() %>% 
       addLayersControl(baseGroups = c("Ocean Basemap", "World Imagery", "Dark Map"), 
                    options = layersControlOptions(collapsed = TRUE), position = "topleft")
+})
+
+# Draw the map of all tracks
+output$map_all <- renderLeaflet({
+
+  tracks.map()
+    
   })
+
+
 
 leafletOutput('map_all')
 ```
