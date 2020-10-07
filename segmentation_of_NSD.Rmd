@@ -275,14 +275,27 @@ observe({
   })
   
   
-  df.pts<- reactive({
+  df.start.pt<- reactive({
     df<- reacted.data()
 
-    dat.sf<- st_as_sf(df, coords = c("x","y"), crs = 32617) %>%
-       st_transform(4326) %>%
-       summarize(do_union = FALSE) %>%
-       st_cast("POINT") %>% 
-       slice(1, nrow(df))
+    dat.sf<- sf::st_as_sf(df, coords = c("x","y"), crs = 32617) %>%
+       sf::st_transform(4326) %>%
+       # summarize(do_union = FALSE) %>%
+       # st_cast("POINT") %>% 
+       dplyr::slice(1)
+
+    dat.sf
+
+  })
+  
+  df.end.pt<- reactive({
+    df<- reacted.data()
+
+    dat.sf<- sf::st_as_sf(df, coords = c("x","y"), crs = 32617) %>%
+       sf::st_transform(4326) %>%
+       # summarize(do_union = FALSE) %>%
+       # st_cast("POINT") %>% 
+       dplyr::slice(nrow(df))
 
     dat.sf
 
@@ -292,28 +305,28 @@ observe({
    
    
   # Clear old selection on map, and add new selection
-  leafletProxy('map', data = df()) %>%
-  clearControls() %>%
-  clearShapes() %>%
-  clearMarkers() %>% 
-  fitBounds(as.numeric(st_bbox(df())[1]),
-            as.numeric(st_bbox(df())[2]),
-            as.numeric(st_bbox(df())[3]),
-            as.numeric(st_bbox(df())[4])) %>%
-  addPolylines(lng = as.numeric(st_coordinates(df())[,1]),
-               lat = as.numeric(st_coordinates(df())[,2]),
+  leaflet::leafletProxy('map', data = df()) %>%
+  leaflet::clearControls() %>%
+  leaflet::clearShapes() %>%
+  leaflet::clearMarkers() %>% 
+  leaflet::fitBounds(as.numeric(sf::st_bbox(df())[1]),
+            as.numeric(sf::st_bbox(df())[2]),
+            as.numeric(sf::st_bbox(df())[3]),
+            as.numeric(sf::st_bbox(df())[4])) %>%
+  leaflet::addPolylines(lng = as.numeric(sf::st_coordinates(df())[,1]),
+               lat = as.numeric(sf::st_coordinates(df())[,2]),
                weight = 2,
                color = "darkturquoise",
                opacity = 0.8) %>% 
-  addCircleMarkers(data = df.pts(),
-                   lng = as.numeric(st_coordinates(df.pts())[1,1]),
-                   lat = as.numeric(st_coordinates(df.pts())[1,2]),
+  leaflet::addCircleMarkers(data = df.start.pt(),
+                   # lng = as.numeric(sf::st_coordinates(df.start.pt())[,1]),
+                   # lat = as.numeric(sf::st_coordinates(df.start.pt())[,2]),
                    fillColor = "#5EF230",
                    stroke = FALSE,
-                   fillOpacity = 0.8) %>% 
-  addCircleMarkers(data = df.pts(),
-                   lng = as.numeric(st_coordinates(df.pts())[2,1]),
-                   lat = as.numeric(st_coordinates(df.pts())[2,2]),
+                   fillOpacity = 0.8) %>%
+  leaflet::addCircleMarkers(data = df.end.pt(),
+                   # lng = as.numeric(sf::st_coordinates(df.end.pt())[,1]),
+                   # lat = as.numeric(sf::st_coordinates(df.end.pt())[,2]),
                    fillColor = "red",
                    stroke = FALSE,
                    fillOpacity = 0.8)
