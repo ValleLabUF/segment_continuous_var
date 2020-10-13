@@ -508,10 +508,12 @@ numericInput(inputId = "epsg",
              label = "Enter EPSG",
              value = 4326)
 
-fileInput(inputId = "filemap",
-          label = "Choose a shapefile",
-          multiple = TRUE,
-          accept = c('.shp','.dbf','.sbn','.sbx','.shx','.prj'))
+actionButton('update' ,'Load')
+
+# fileInput(inputId = "filemap",
+#           label = "Choose a shapefile",
+#           multiple = TRUE,
+#           accept = c('.shp','.dbf','.sbn','.sbx','.shx','.prj'))
 
 ```
 <br />
@@ -617,7 +619,7 @@ output$uploadMap <- renderLeaflet({
 
   
 # Store map as reactive expression for render
-observe({
+observeEvent(input$update, {
   
   req(csv.data())
 
