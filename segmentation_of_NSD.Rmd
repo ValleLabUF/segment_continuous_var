@@ -44,6 +44,7 @@ library(dplyr)
 # library(ggplot2)
 library(purrr)
 library(sf)
+library(sp)
 library(rgdal)
 # library(raster)
 library(viridis)
@@ -106,7 +107,9 @@ selectInput('animal_id', label = 'Select an ID', choices = unique(dat$id), selec
 
 Use the __Explore NSD__ tab to explore temporal patterns in net squared displacement (NSD). Click and drag on the lineplot to highlight the corresponding time range on the map below. Grey shaded regions indicate peak breeding season (March 1^st^ to June 30^th^).
 
-Click the __View all tracks__ tab to view tracks for all individuals. This provides a quick overview of all track segments separately and allows for filtering tracks by time.  
+Click the __View all tracks__ tab to view tracks for all individuals. This provides a quick overview of all track segments separately and allows for filtering tracks by time.
+
+Click the __Load data__ tab to import own tracks. This allows users to explore their own data using the Shiny app.
 
 Application author: [Josh Cullen](https://joshcullen.github.io/), [University of Florida](http://www.ufl.edu)
 
@@ -208,7 +211,7 @@ dygraphOutput("lineplot")
 ### Track Map
 
 ```{r}
-# Draw the map without selected tracts
+# Draw the map without selected tracks
 output$map <- renderLeaflet({
 
     bounds<- reactive({
@@ -371,7 +374,9 @@ pickerInput(
 
 Use the __Explore NSD__ tab to explore temporal patterns in net squared displacement (NSD). Click and drag on the lineplot to highlight the corresponding time range on the map below. Grey shaded regions indicate peak breeding season (March 1^st^ to June 30^th^).
 
-Click the __View all tracks__ tab to view tracks for all individuals. This provides a quick overview of all track segments separately and allows for filtering tracks by time.  
+Click the __View all tracks__ tab to view tracks for all individuals. This provides a quick overview of all track segments separately and allows for filtering tracks by time.
+
+Click the __Load data__ tab to import own tracks. This allows users to explore their own data using the Shiny app.
 
 Application author: [Josh Cullen](https://joshcullen.github.io/), [University of Florida](http://www.ufl.edu)
 
@@ -417,7 +422,7 @@ return(d2)
 })
 
 
-# Store map as reactive expression for render and download
+# Store map as reactive expression for render
 tracks.map<- reactive({
   
   #format data where each ID is a linestring
@@ -426,6 +431,7 @@ tracks.map<- reactive({
              group_by(id) %>% 
              summarize(do_union=F) %>% 
              st_cast("LINESTRING")
+    if (is.null(dat.sf)) return(NULL)
     
     #set palette
     pal1<- colorFactor(palette = "viridis", domain = dat.sf$id)
@@ -475,3 +481,232 @@ output$map_all <- renderLeaflet({
 
 leafletOutput('map_all')
 ```
+
+
+
+
+Load data
+======================================================================
+
+Sidebar {.sidebar}
+-----------------------------------------------------------------------
+<style>
+.section.sidebar {
+  top: 61px;
+  background-color: rgba(255, 127, 0, 0.25);
+}
+</style>
+
+<br />
+```{r}
+fileInput(inputId = "filedata",
+          label = "Choose a csv file",
+          multiple = TRUE,
+          accept = c(".csv"))
+
+numericInput(inputId = "epsg",
+             label = "Enter EPSG",
+             value = 4326)
+
+fileInput(inputId = "filemap",
+          label = "Choose a shapefile",
+          multiple = TRUE,
+          accept = c('.shp','.dbf','.sbn','.sbx','.shx','.prj'))
+
+```
+<br />
+
+
+Use the __Explore NSD__ tab to explore temporal patterns in net squared displacement (NSD). Click and drag on the lineplot to highlight the corresponding time range on the map below. Grey shaded regions indicate peak breeding season (March 1^st^ to June 30^th^).
+
+Click the __View all tracks__ tab to view tracks for all individuals. This provides a quick overview of all track segments separately and allows for filtering tracks by time.
+
+Click the __Load data__ tab to import own tracks. This allows users to explore their own data using the Shiny app.
+
+Application author: [Josh Cullen](https://joshcullen.github.io/), [University of Florida](http://www.ufl.edu)
+
+
+
+Row
+-----------------------------------------------------------------------
+
+### Map of All Tracks
+
+To properly load and visualize data, animal IDs must be stored in column named *id* and coordinates must be stored as *x* and *y*. Additionally, the projection of these locations must also be provided (as EPSG). If coordinates stored as longitude and latitude, use *4326* for EPSG.
+
+```{r}
+
+#Allow users to upload up to 30 MB at a time
+options(shiny.maxRequestSize = 30*1024^2)
+
+#make uploaded data (csv or shp) reactive
+csv.data <- reactive({
+    req(input$filedata)
+    read.csv(input$filedata$datapath)
+  })
+
+
+shp.data <- reactive({
+    req(input$filemap)
+
+    # shpdf is a data.frame with the name, size, type and
+    # datapath of the uploaded files
+    shpdf <- input$filemap
+
+    # The files are uploaded with names
+    # 0.dbf, 1.prj, 2.shp, 3.xml, 4.shx
+    # (path/names are in column datapath)
+    # We need to rename the files with the actual names:
+    # fe_2007_39_county.dbf, etc.
+    # (these are in column name)
+
+    # Name of the temporary directory where files are uploaded
+    tempdirname <- dirname(shpdf$datapath[1])
+
+    # Rename files
+    for (i in 1:nrow(shpdf)) {
+      file.rename(
+        shpdf$datapath[i],
+        paste0(tempdirname, "/", shpdf$name[i])
+      )
+    }
+
+    # Now we read the shapefile with readOGR() of rgdal package
+    # passing the name of the file with .shp extension.
+
+    # We use the function grep() to search the pattern "*.shp$"
+    # within each element of the character vector shpdf$name.
+    # grep(pattern="*.shp$", shpdf$name)
+    # ($ at the end denote files that finish with .shp,
+    # not only that contain .shp)
+    map <- readOGR(paste(tempdirname,
+      shpdf$name[grep(pattern = "*.shp$", shpdf$name)],
+      sep = "/"
+    ))
+    
+    if(!is.null(proj4string(map))) {
+       map<- spTransform(map, CRS("+init=epsg:4326"))
+    }
+    
+    map
+  })
+
+
+
+# Create basemap
+output$uploadMap <- renderLeaflet({
+
+    leaflet() %>%
+    addProviderTiles(providers$Esri.OceanBasemap, group = "Ocean Basemap",
+                        options = tileOptions(continuous_world = F)) %>%
+    addProviderTiles(providers$Esri.WorldImagery, group = "World Imagery",
+                        options = tileOptions(continuous_world = F)) %>%
+    addProviderTiles(providers$CartoDB.DarkMatterNoLabels, group = "Dark Map",
+                        options = tileOptions(continuous_world = F)) %>%
+      setView(lng = -96, lat = 37, zoom = 4) %>%
+      addMiniMap(tiles = providers$Esri.OceanBasemap,
+               toggleDisplay = TRUE,
+               position = "bottomleft") %>% 
+      addScaleBar() %>% 
+      addLayersControl(baseGroups = c("Ocean Basemap", "World Imagery", "Dark Map"), 
+                   options = layersControlOptions(collapsed = TRUE), position = "topleft")
+  })
+
+
+
+
+  
+# Store map as reactive expression for render
+observe({
+  
+  req(csv.data())
+
+    # shp.data <- shp.data()
+    # csv.data <- csv.data()
+    
+    #format data where each ID is a linestring
+    csv.sf<- st_as_sf(csv.data(), coords = c("x","y"), crs = input$epsg) %>%
+             st_transform(4326) %>% 
+             group_by(id) %>% 
+             summarize(do_union=F) %>% 
+             st_cast("LINESTRING")
+
+    # # Add data to map
+    # datafiltered <- data[which(data$year == input$yearselected), ]
+    # ordercounties <- match(map@data$NAME, datafiltered$county)
+    # map@data <- datafiltered[ordercounties, ]
+
+    # # Create variableplot
+    # map$variableplot <- as.numeric(
+    #   map@data[, input$variableselected])
+
+    # Create leaflet
+    # pal <- colorBin("YlOrRd", domain = map$variableplot, bins = 7)
+    # labels <- sprintf("%s: %g", map$county, map$variableplot) %>%
+    #   lapply(htmltools::HTML)
+
+    # l <- leaflet(map) %>%
+    #   addTiles() %>%
+    #   addPolygons(
+    #     fillColor = ~ pal(variableplot),
+    #     color = "white",
+    #     dashArray = "3",
+    #     fillOpacity = 0.7,
+    #     label = labels
+    #   ) %>%
+    #   leaflet::addLegend(
+    #     pal = pal, values = ~variableplot,
+    #     opacity = 0.7, title = NULL
+    #   )
+    
+    
+    
+    
+    
+    
+    #set palette
+    pal1<- colorFactor(palette = "viridis", domain = csv.sf$id)
+    
+    labs<- sprintf("<strong>ID %s</strong><br/>", csv.sf$id) %>%
+       lapply(htmltools::HTML)
+
+  
+    leafletProxy("uploadMap", data = csv.sf) %>%
+    # addProviderTiles(providers$Esri.OceanBasemap, group = "Ocean Basemap",
+    #                     options = tileOptions(continuous_world = F)) %>%
+    # addProviderTiles(providers$Esri.WorldImagery, group = "World Imagery",
+    #                     options = tileOptions(continuous_world = F)) %>%
+    # addProviderTiles(providers$CartoDB.DarkMatterNoLabels, group = "Dark Map",
+    #                     options = tileOptions(continuous_world = F)) %>%
+      fitBounds(as.numeric(sf::st_bbox(csv.sf)[1]),
+            as.numeric(sf::st_bbox(csv.sf)[2]),
+            as.numeric(sf::st_bbox(csv.sf)[3]),
+            as.numeric(sf::st_bbox(csv.sf)[4])) %>% 
+    addPolylines(data = csv.sf,
+                 weight = 2,
+                 # layerId = ~unique(id),
+                 color = ~pal1(id),
+                 label = labs) %>%
+    leaflet::addLegend("bottomright",
+                 pal = pal1,
+                 values = csv.sf$id,
+                 title = "ID",
+                 opacity = 1) %>%
+    addMeasure(position = "topleft",
+               primaryLengthUnit = "kilometers",
+               primaryAreaUnit = "hectares",
+               activeColor = "#3D535D",
+               completedColor = "#7D4479") %>%
+    # addMiniMap(tiles = providers$Esri.OceanBasemap,
+    #            toggleDisplay = TRUE,
+    #            position = "bottomleft") %>% 
+      addScaleBar() #%>% 
+      # addLayersControl(baseGroups = c("Ocean Basemap", "World Imagery", "Dark Map"), 
+      #              options = layersControlOptions(collapsed = TRUE), position = "topleft")
+  })
+
+
+
+leafletOutput('uploadMap')
+```
+
